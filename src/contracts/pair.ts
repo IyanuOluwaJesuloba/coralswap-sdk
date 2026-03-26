@@ -86,6 +86,15 @@ export class PairClient {
   private sourceAccount?: string;
   readonly address: string;
 
+  /**
+   * Create a new PairClient for a specific pair contract.
+   *
+   * @param contractAddress - The Soroban contract address of the pair.
+   * @param rpcUrl - The Soroban RPC endpoint URL.
+   * @param networkPassphrase - The Stellar network passphrase.
+   * @param retryOptions - Retry policy for RPC calls.
+   * @param logger - Optional logger for debug/error output.
+   */
   constructor(
     contractAddress: string,
     rpcUrl: string,
@@ -105,6 +114,9 @@ export class PairClient {
 
   /**
    * Read current reserves from the pair contract.
+   *
+   * @returns The current token reserves as `{ reserve0, reserve1 }` in i128 BigInt.
+   * @throws {Error} If the RPC call fails or returns an unexpected format.
    */
   async getReserves(): Promise<{ reserve0: bigint; reserve1: bigint }> {
     const op = this.contract.call("get_reserves");
@@ -124,6 +136,9 @@ export class PairClient {
 
   /**
    * Read the token addresses for this pair.
+   *
+   * @returns The canonical `{ token0, token1 }` addresses (token0 < token1 lexicographically).
+   * @throws {Error} If the RPC call fails or returns an unexpected format.
    */
   async getTokens(): Promise<{ token0: string; token1: string }> {
     const op0 = this.contract.call("token_0");
@@ -143,6 +158,9 @@ export class PairClient {
 
   /**
    * Read the LP token address for this pair.
+   *
+   * @returns The Soroban contract address of the pair's LP token.
+   * @throws {Error} If the RPC call fails.
    */
   async getLPTokenAddress(): Promise<string> {
     const op = this.contract.call("lp_token");
@@ -153,6 +171,9 @@ export class PairClient {
 
   /**
    * Read the current dynamic fee in basis points.
+   *
+   * @returns The current fee in basis points (e.g. `30` = 0.3%).
+   * @throws {Error} If the RPC call fails.
    */
   async getDynamicFee(): Promise<number> {
     const op = this.contract.call("get_dynamic_fee");
@@ -163,6 +184,10 @@ export class PairClient {
 
   /**
    * Read the full dynamic fee engine state.
+   *
+   * @returns The complete {@link FeeState} including EMA accumulators, min/max bounds,
+   *   and the timestamp of the last fee update.
+   * @throws {Error} If the RPC call fails or the response cannot be parsed.
    */
   async getFeeState(): Promise<FeeState> {
     const op = this.contract.call("get_fee_state");
@@ -187,6 +212,9 @@ export class PairClient {
 
   /**
    * Read flash loan configuration.
+   *
+   * @returns The {@link FlashLoanConfig} for this pair, including fee bps, floor, and lock status.
+   * @throws {Error} If the RPC call fails or the response cannot be parsed.
    */
   async getFlashLoanConfig(): Promise<FlashLoanConfig> {
     const op = this.contract.call("get_flash_config");
@@ -208,6 +236,12 @@ export class PairClient {
 
   /**
    * Build a swap operation for this pair.
+   *
+   * @param sender - The address authorising and paying for the swap.
+   * @param tokenIn - The address of the token being sold.
+   * @param amountIn - The exact amount of `tokenIn` to sell (i128).
+   * @param amountOutMin - The minimum acceptable output amount (slippage guard).
+   * @returns An XDR operation ready to be included in a transaction.
    */
   buildSwap(
     sender: string,
@@ -226,6 +260,13 @@ export class PairClient {
 
   /**
    * Build a deposit (add liquidity) operation.
+   *
+   * @param sender - The address providing liquidity and receiving LP tokens.
+   * @param amountA - Desired amount of token A to deposit (i128).
+   * @param amountB - Desired amount of token B to deposit (i128).
+   * @param amountAMin - Minimum acceptable amount of token A (slippage guard).
+   * @param amountBMin - Minimum acceptable amount of token B (slippage guard).
+   * @returns An XDR operation ready to be included in a transaction.
    */
   buildDeposit(
     sender: string,
@@ -246,6 +287,12 @@ export class PairClient {
 
   /**
    * Build a withdraw (remove liquidity) operation.
+   *
+   * @param sender - The address burning LP tokens and receiving underlying tokens.
+   * @param liquidity - The amount of LP tokens to burn (i128).
+   * @param amountAMin - Minimum acceptable amount of token A to receive (slippage guard).
+   * @param amountBMin - Minimum acceptable amount of token B to receive (slippage guard).
+   * @returns An XDR operation ready to be included in a transaction.
    */
   buildWithdraw(
     sender: string,
@@ -264,6 +311,13 @@ export class PairClient {
 
   /**
    * Build a flash loan operation.
+   *
+   * @param borrower - The address initiating the flash loan (must be the tx source).
+   * @param token - The address of the token to borrow.
+   * @param amount - The amount to borrow (i128).
+   * @param receiverAddress - The contract address that implements `on_flash_loan`.
+   * @param data - Arbitrary callback data forwarded to the receiver contract.
+   * @returns An XDR operation ready to be included in a transaction.
    */
   buildFlashLoan(
     borrower: string,
@@ -284,6 +338,10 @@ export class PairClient {
 
   /**
    * Read the cumulative price oracle values (for TWAP).
+   *
+   * @returns The latest cumulative price accumulators and the block timestamp
+   *   of the last swap, used to compute Time-Weighted Average Prices.
+   * @throws {Error} If the RPC call fails or the response cannot be parsed.
    */
   async getCumulativePrices(): Promise<{
     price0CumulativeLast: bigint;
@@ -304,6 +362,12 @@ export class PairClient {
   }
 
   /**
+   * Simulate a read-only contract call and return the return value.
+   *
+   * Uses a well-known zero-balance account as the source so no funds are required.
+   *
+   * @param op - The XDR operation to simulate.
+   * @returns The `ScVal` return value, or `null` if simulation produced no result.
    * Simulate a read-only contract call.
    *
    * @param op - The contract operation to simulate.
