@@ -97,6 +97,8 @@ export {
   getSimulationReturnValue,
   getResourceEstimate,
   exceedsBudget,
+  decodeDiagnosticEvents,
+  buildSimulationResult,
   withRetry,
   isRetryable,
   sleep,

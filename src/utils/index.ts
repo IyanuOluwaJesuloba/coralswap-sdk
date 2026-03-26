@@ -31,6 +31,8 @@ export {
   getSimulationReturnValue,
   getResourceEstimate,
   exceedsBudget,
+  decodeDiagnosticEvents,
+  buildSimulationResult,
 } from "./simulation";
 
 export type { SimulationResult, SimulationResourceEstimate } from './simulation';
