@@ -187,12 +187,14 @@ export class CoralSwapClient {
    * Create a PairClient for a specific pair contract address.
    */
   pair(pairAddress: string): PairClient {
+    const sourceAccount = this._publicKeyCache ?? this.config.publicKey;
     return new PairClient(
       pairAddress,
       this.networkConfig.rpcUrl,
       this.networkConfig.networkPassphrase,
       this.getRetryOptions(),
       this.logger,
+      sourceAccount,
     );
   }
 

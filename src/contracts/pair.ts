@@ -83,6 +83,7 @@ export class PairClient {
   private networkPassphrase: string;
   private retryOptions: RetryOptions;
   private logger?: Logger;
+  private sourceAccount?: string;
   readonly address: string;
 
   constructor(
@@ -91,6 +92,7 @@ export class PairClient {
     networkPassphrase: string,
     retryOptions: RetryOptions,
     logger?: Logger,
+    sourceAccount?: string,
   ) {
     this.address = contractAddress;
     this.contract = new Contract(contractAddress);
@@ -98,6 +100,7 @@ export class PairClient {
     this.networkPassphrase = networkPassphrase;
     this.retryOptions = retryOptions;
     this.logger = logger;
+    this.sourceAccount = sourceAccount;
   }
 
   /**
@@ -302,13 +305,22 @@ export class PairClient {
 
   /**
    * Simulate a read-only contract call.
+   *
+   * @param op - The contract operation to simulate.
+   * @param sourceAccount - Optional account to use as the simulation source.
+   *   Falls back to the account configured on this PairClient instance.
+   * @throws {Error} If no source account is available.
    */
-  private async simulateRead(op: xdr.Operation): Promise<xdr.ScVal | null> {
+  private async simulateRead(op: xdr.Operation, sourceAccount?: string): Promise<xdr.ScVal | null> {
+    const accountId = sourceAccount ?? this.sourceAccount;
+    if (!accountId) {
+      throw new Error(
+        "simulateRead requires a sourceAccount. Provide one as an argument or configure it on the PairClient instance.",
+      );
+    }
+
     const account = await withRetry(
-      () =>
-        this.server.getAccount(
-          "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-        ),
+      () => this.server.getAccount(accountId),
       this.retryOptions,
       this.logger,
       "PairClient_getAccount",
