@@ -105,6 +105,23 @@ describe('Amount Utilities', () => {
     it('multiplies safely', () => {
       expect(safeMul(100n, 200n)).toBe(20000n);
     });
+
+    it('returns 0n when first operand is zero', () => {
+      expect(safeMul(0n, 1000000000000000000n)).toBe(0n);
+    });
+
+    it('returns 0n when second operand is zero', () => {
+      expect(safeMul(1000000000000000000n, 0n)).toBe(0n);
+    });
+
+    it('returns 0n when both operands are zero', () => {
+      expect(safeMul(0n, 0n)).toBe(0n);
+    });
+
+    it('handles large non-zero inputs correctly', () => {
+      const big = BigInt('1000000000000000000');
+      expect(safeMul(big, 2n)).toBe(2000000000000000000n);
+    });
   });
 
   describe('safeDiv', () => {

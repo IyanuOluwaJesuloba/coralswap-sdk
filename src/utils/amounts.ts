@@ -388,9 +388,10 @@ export function percentDiff(a: bigint, b: bigint): number {
  * - Essential for preventing silent overflow bugs in financial calculations
  */
 export function safeMul(a: bigint, b: bigint): bigint {
+  if (a === 0n || b === 0n) return 0n;
   const result = a * b;
-  if (a !== 0n && result / a !== b) {
-    throw new Error("Multiplication overflow");
+  if (result / a !== b) {
+    throw new Error("Overflow in safeMul");
   }
   return result;
 }
