@@ -1,6 +1,7 @@
 import { CoralSwapClient } from "@/client";
 import { PRECISION } from "@/config";
 import { ValidationError, InsufficientLiquidityError } from "@/errors";
+import { validateAddress } from "@/utils/validation";
 
 /**
  * TWAP Oracle data point from cumulative price accumulators.
@@ -24,6 +25,27 @@ export interface TWAPResult {
   startObservation: TWAPObservation;
   endObservation: TWAPObservation;
 }
+
+export interface TWAPAnalysisResult {
+  windowLedgers: number;
+  price0Avg: bigint;
+  price1Avg: bigint;
+}
+
+const MAX_I128 = (1n << 127n) - 1n;
+
+function validateI128(value: bigint, name: string): void {
+  if (value < -MAX_I128 - 1n || value > MAX_I128) {
+    throw new ValidationError(`${name} is out of i128 bounds`, {
+      value: value.toString(),
+    });
+  }
+}
+
+const ORACLE_LIMITS = {
+  minWindowLedgers: 1,
+  maxWindowLedgers: 100_000,
+} as const;
 
 /**
  * Oracle module -- TWAP price feeds from CoralSwap pairs.
@@ -181,6 +203,71 @@ export class OracleModule {
       price0Per1: (reserve0 * PRECISION.PRICE_SCALE) / reserve1,
       price1Per0: (reserve1 * PRECISION.PRICE_SCALE) / reserve0,
     };
+  }
+
+  async analyzeTwap(pair: string, windows: number[]): Promise<TWAPAnalysisResult[]> {
+    validateAddress(pair, "pair");
+
+    for (const windowLedgers of windows) {
+      if (!Number.isFinite(windowLedgers) || !Number.isInteger(windowLedgers)) {
+        throw new ValidationError("window must be an integer", { windowLedgers });
+      }
+      if (windowLedgers <= 0) {
+        throw new ValidationError("window must be greater than 0", { windowLedgers });
+      }
+      if (windowLedgers < ORACLE_LIMITS.minWindowLedgers || windowLedgers > ORACLE_LIMITS.maxWindowLedgers) {
+        throw new ValidationError("window is outside oracle limits", {
+          windowLedgers,
+          minWindowLedgers: ORACLE_LIMITS.minWindowLedgers,
+          maxWindowLedgers: ORACLE_LIMITS.maxWindowLedgers,
+        });
+      }
+    }
+
+    const endObservation = await this.observe(pair);
+    const observations = this.observationCache.get(pair) ?? [];
+
+    return Promise.all(
+      windows.map(async (windowLedgers) => {
+        const targetTimestamp = endObservation.blockTimestampLast - windowLedgers;
+
+        let startObservation: TWAPObservation | undefined;
+        for (let i = observations.length - 1; i >= 0; i--) {
+          const obs = observations[i];
+          if (obs.blockTimestampLast <= targetTimestamp) {
+            startObservation = obs;
+            break;
+          }
+        }
+
+        if (!startObservation) {
+          throw new ValidationError("Insufficient observations for requested window", {
+            windowLedgers,
+            latestTimestamp: endObservation.blockTimestampLast,
+            earliestTimestamp: observations[0]?.blockTimestampLast,
+          });
+        }
+
+        const { price0TWAP, price1TWAP } = this.computeTWAP(startObservation, endObservation);
+
+        validateI128(price0TWAP, "price0Avg");
+        validateI128(price1TWAP, "price1Avg");
+
+        if (price0TWAP <= 0n || price1TWAP <= 0n) {
+          throw new ValidationError("Computed TWAP is outside oracle limits", {
+            windowLedgers,
+            price0Avg: price0TWAP.toString(),
+            price1Avg: price1TWAP.toString(),
+          });
+        }
+
+        return {
+          windowLedgers,
+          price0Avg: price0TWAP,
+          price1Avg: price1TWAP,
+        };
+      }),
+    );
   }
 
   /**

@@ -277,4 +277,83 @@ describe('OracleModule', () => {
             expect(price1Per0).toBeGreaterThanOrEqual(0n);
         });
     });
+
+    describe('analyzeTwap()', () => {
+        const VALID_PAIR = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM';
+
+        function createSequenceClient(sequence: Array<{ p0: bigint; p1: bigint; ts: number }>) {
+            let i = 0;
+            const getCumulativePrices = jest.fn().mockImplementation(() => {
+                const item = sequence[Math.min(i, sequence.length - 1)];
+                i++;
+                return Promise.resolve({
+                    price0CumulativeLast: item.p0,
+                    price1CumulativeLast: item.p1,
+                    blockTimestampLast: item.ts,
+                });
+            });
+
+            const client = {
+                pair: jest.fn().mockReturnValue({
+                    getReserves: jest.fn().mockResolvedValue({
+                        reserve0: 1_000_000n,
+                        reserve1: 1_000_000n,
+                    }),
+                    getTokens: jest.fn().mockResolvedValue({
+                        token0: 'TOKEN_0',
+                        token1: 'TOKEN_1',
+                    }),
+                    getCumulativePrices,
+                }),
+            } as unknown as CoralSwapClient;
+
+            return { client, getCumulativePrices };
+        }
+
+        it('returns one analysis result per window (3-window analysis)', async () => {
+            const { client, getCumulativePrices } = createSequenceClient([
+                { p0: 0n, p1: 0n, ts: 0 },
+                { p0: 1000n, p1: 2000n, ts: 10 },
+                { p0: 2000n, p1: 4000n, ts: 20 },
+                { p0: 3000n, p1: 6000n, ts: 30 },
+            ]);
+            const oracle = new OracleModule(client);
+
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+
+            const res = await oracle.analyzeTwap(VALID_PAIR, [5, 10, 20]);
+
+            expect(res).toHaveLength(3);
+            expect(res.map((r) => r.windowLedgers)).toEqual([5, 10, 20]);
+            expect(res.every((r) => r.price0Avg > 0n)).toBe(true);
+            expect(res.every((r) => r.price1Avg > 0n)).toBe(true);
+
+            // Should only take one additional observation inside analyzeTwap()
+            expect(getCumulativePrices).toHaveBeenCalledTimes(4);
+        });
+
+        it('supports a single window', async () => {
+            const { client } = createSequenceClient([
+                { p0: 0n, p1: 0n, ts: 0 },
+                { p0: 1000n, p1: 2000n, ts: 10 },
+                { p0: 2000n, p1: 4000n, ts: 20 },
+            ]);
+            const oracle = new OracleModule(client);
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+
+            const res = await oracle.analyzeTwap(VALID_PAIR, [10]);
+            expect(res).toHaveLength(1);
+            expect(res[0].windowLedgers).toBe(10);
+        });
+
+        it('rejects invalid window values', async () => {
+            const oracle = new OracleModule(createMockClient());
+            await expect(oracle.analyzeTwap(VALID_PAIR, [0])).rejects.toThrow(ValidationError);
+            await expect(oracle.analyzeTwap(VALID_PAIR, [-1])).rejects.toThrow(ValidationError);
+            await expect(oracle.analyzeTwap(VALID_PAIR, [100_001])).rejects.toThrow(ValidationError);
+        });
+    });
 });
