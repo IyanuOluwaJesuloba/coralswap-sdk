@@ -224,7 +224,7 @@ export async function withRetry<T>(
           config.baseDelayMs * Math.pow(config.backoffMultiplier, attempt);
         const backoff = Math.min(config.maxDelayMs, rawBackoff);
         const jitter = backoff * 0.15 * (Math.random() * 2 - 1);
-        const delay = Math.max(0, backoff + jitter);
+        const delay = Math.min(config.maxDelayMs, Math.max(0, backoff + jitter));
 
         logger?.debug(`${label}: retrying after ${Math.round(delay)}ms`, {
           attempt: attempt + 1,

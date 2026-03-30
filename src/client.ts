@@ -1,5 +1,4 @@
 import {
-  Keypair,
   SorobanRpc,
   TransactionBuilder,
   Transaction,
@@ -17,6 +16,7 @@ import { FactoryModule } from '@/modules/factory';
 import { KeypairSigner } from '@/utils/signer';
 import { TransactionPoller, PollingStrategy, PollingOptions } from '@/utils/polling';
 import { buildSimulationResult } from '@/utils/simulation';
+import { withRetry, RetryOptions } from '@/utils/retry';
 export { KeypairSigner, PollingStrategy, PollingOptions };
 
 /**
@@ -43,6 +43,7 @@ export class CoralSwapClient {
   private _factory: FactoryClient | null = null;
   private _router: RouterClient | null = null;
   private _factoryModule: FactoryModule | null = null;
+  private _poller: TransactionPoller | null = null;
   private readonly logger?: Logger;
 
   /**

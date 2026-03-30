@@ -24,8 +24,8 @@ describe('Retry Utilities', () => {
   it('retries with exponential backoff intervals and eventually succeeds', async () => {
     const operation = jest
       .fn<Promise<string>, []>()
-      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
-      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }))
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }))
       .mockResolvedValueOnce('ok');
 
     const result = await withRetry(operation, {
@@ -47,7 +47,7 @@ describe('Retry Utilities', () => {
   it('respects maximum retry limit and throws the last error', async () => {
     const operation = jest
       .fn<Promise<never>, []>()
-      .mockRejectedValue(new Error('ENOTFOUND'));
+      .mockRejectedValue(Object.assign(new Error('ETIMEDOUT'), { code: 'ETIMEDOUT' }));
 
     await expect(
       withRetry(operation, {
@@ -56,7 +56,7 @@ describe('Retry Utilities', () => {
         backoffMultiplier: 2,
         maxDelayMs: 100,
       }),
-    ).rejects.toThrow('ENOTFOUND');
+    ).rejects.toThrow('ETIMEDOUT');
 
     expect(operation).toHaveBeenCalledTimes(3);
 
@@ -67,7 +67,7 @@ describe('Retry Utilities', () => {
   it('caps backoff delay at maxDelayMs', async () => {
     const operation = jest
       .fn<Promise<never>, []>()
-      .mockRejectedValue(new Error('503 Service Unavailable'));
+      .mockRejectedValue(Object.assign(new Error('503 Service Unavailable'), { response: { status: 503 } }));
 
     await expect(
       withRetry(operation, {
@@ -114,7 +114,7 @@ describe('Retry Utilities', () => {
 
     const operation = jest
       .fn<Promise<never>, []>()
-      .mockRejectedValue(new Error('ETIMEDOUT'));
+      .mockRejectedValue(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }));
 
     const deadlineMs = Date.now() + 15;
 
@@ -126,15 +126,13 @@ describe('Retry Utilities', () => {
       deadlineMs,
     });
 
+    const caught = promise.catch((e) => e);
+
     await jest.advanceTimersByTimeAsync(20);
 
-    try {
-      await promise;
-      throw new Error('Expected withRetry to throw');
-    } catch (err: any) {
-      expect(err).toBeInstanceOf(DeadlineError);
-      expect(err.message).not.toContain('ETIMEDOUT');
-    }
+    const err = await caught;
+    expect(err).toBeInstanceOf(DeadlineError);
+    expect(err.message).not.toContain('ETIMEDOUT');
 
     expect(operation).toHaveBeenCalledTimes(2);
   });
