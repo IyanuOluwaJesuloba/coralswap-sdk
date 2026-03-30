@@ -36,6 +36,8 @@ export interface CoralSwapConfig {
   maxRetries?: number;
   /** Delay in milliseconds between retry attempts */
   retryDelayMs?: number;
+  /** Maximum delay in milliseconds between retry attempts */
+  maxRetryDelayMs?: number;
   pollingStrategy?: PollingStrategy;
   pollingIntervalMs?: number;
   maxPollingAttempts?: number;
@@ -78,6 +80,7 @@ export const DEFAULTS = {
   deadlineSec: 1200,
   maxRetries: 3,
   retryDelayMs: 1000,
+  maxRetryDelayMs: 30_000,
   pollingStrategy: PollingStrategy.LINEAR,
   pollingIntervalMs: 1000,
   maxPollingAttempts: 30,

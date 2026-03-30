@@ -43,6 +43,10 @@ export {
   sleep,
   RetryConfig,
   DEFAULT_RETRY_CONFIG,
+  CircuitBreaker,
+  CircuitOpenError,
+  getCircuitBreaker,
+  resetCircuitBreakers,
 } from "./retry";
 
 export { Fraction, Percent, Rounding } from './math';
