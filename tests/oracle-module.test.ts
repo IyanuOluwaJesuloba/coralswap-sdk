@@ -356,4 +356,86 @@ describe('OracleModule', () => {
             await expect(oracle.analyzeTwap(VALID_PAIR, [100_001])).rejects.toThrow(ValidationError);
         });
     });
+
+    describe('getVolatilityScore()', () => {
+        const VALID_PAIR = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM';
+
+        function createSequenceClient(sequence: Array<{ p0: bigint; p1: bigint; ts: number }>) {
+            let i = 0;
+            const getCumulativePrices = jest.fn().mockImplementation(() => {
+                const item = sequence[Math.min(i, sequence.length - 1)];
+                i++;
+                return Promise.resolve({
+                    price0CumulativeLast: item.p0,
+                    price1CumulativeLast: item.p1,
+                    blockTimestampLast: item.ts,
+                });
+            });
+
+            const client = {
+                pair: jest.fn().mockReturnValue({
+                    getReserves: jest.fn().mockResolvedValue({
+                        reserve0: 1_000_000n,
+                        reserve1: 1_000_000n,
+                    }),
+                    getTokens: jest.fn().mockResolvedValue({
+                        token0: 'TOKEN_0',
+                        token1: 'TOKEN_1',
+                    }),
+                    getCumulativePrices,
+                }),
+            } as unknown as CoralSwapClient;
+
+            return { client, getCumulativePrices };
+        }
+
+        it('throws ValidationError when windowCount < 2', async () => {
+            const oracle = new OracleModule(createMockClient());
+            await expect(oracle.getVolatilityScore(VALID_PAIR, 1)).rejects.toThrow(ValidationError);
+        });
+
+        it('returns score = 0 for constant price across windows', async () => {
+            // Make TWAP constant: price0TWAP for any window should be constant.
+            // Use cumulative p0 increasing linearly: p0 = 1000 * ts.
+            const { client } = createSequenceClient([
+                { p0: 0n, p1: 0n, ts: 0 },
+                { p0: 1_000n, p1: 2_000n, ts: 1 },
+                { p0: 2_000n, p1: 4_000n, ts: 2 },
+                { p0: 3_000n, p1: 6_000n, ts: 3 },
+                { p0: 4_000n, p1: 8_000n, ts: 4 },
+            ]);
+            const oracle = new OracleModule(client);
+
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+
+            const res = await oracle.getVolatilityScore(VALID_PAIR, 3);
+            expect(res.samples).toBe(2);
+            expect(res.stddev).toBe(0);
+            expect(res.score).toBe(0);
+        });
+
+        it('returns score > 0 when TWAP deltas vary', async () => {
+            // Construct observations so different windows produce different TWAPs.
+            const { client } = createSequenceClient([
+                { p0: 0n, p1: 0n, ts: 0 },
+                { p0: 100n, p1: 200n, ts: 1 },
+                { p0: 10_000n, p1: 20_000n, ts: 2 },
+                { p0: 10_100n, p1: 20_200n, ts: 3 },
+                { p0: 20_000n, p1: 40_000n, ts: 4 },
+            ]);
+            const oracle = new OracleModule(client);
+
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+            await oracle.observe(VALID_PAIR);
+
+            const res = await oracle.getVolatilityScore(VALID_PAIR, 3);
+            expect(res.samples).toBe(2);
+            expect(res.score).toBeGreaterThan(0);
+        });
+    });
 });

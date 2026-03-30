@@ -32,6 +32,12 @@ export interface TWAPAnalysisResult {
   price1Avg: bigint;
 }
 
+export interface VolatilityScoreResult {
+  score: number;
+  stddev: number;
+  samples: number;
+}
+
 const MAX_I128 = (1n << 127n) - 1n;
 
 function validateI128(value: bigint, name: string): void {
@@ -268,6 +274,58 @@ export class OracleModule {
         };
       }),
     );
+  }
+
+  async getVolatilityScore(pair: string, windowCount: number): Promise<VolatilityScoreResult> {
+    validateAddress(pair, "pair");
+
+    if (!Number.isFinite(windowCount) || !Number.isInteger(windowCount)) {
+      throw new ValidationError("windowCount must be an integer", { windowCount });
+    }
+    if (windowCount < 2) {
+      throw new ValidationError("windowCount must be at least 2", { windowCount });
+    }
+
+    const windows = Array.from({ length: windowCount }, (_, i) => i + 1);
+    const analysis = await this.analyzeTwap(pair, windows);
+
+    const samples = Math.max(0, analysis.length - 1);
+    if (samples === 0) {
+      return { score: 0, stddev: 0, samples: 0 };
+    }
+
+    const deltas: number[] = [];
+    let maxAbsDelta = 0;
+
+    for (let i = 1; i < analysis.length; i++) {
+      const delta = analysis[i].price0Avg - analysis[i - 1].price0Avg;
+      const absDelta = delta < 0n ? -delta : delta;
+
+      if (absDelta > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new ValidationError("Volatility delta exceeds MAX_SAFE_INTEGER", {
+          delta: delta.toString(),
+          windowCount,
+        });
+      }
+
+      const deltaNum = Number(delta);
+      deltas.push(deltaNum);
+      const absNum = Math.abs(deltaNum);
+      if (absNum > maxAbsDelta) maxAbsDelta = absNum;
+    }
+
+    const mean = deltas.reduce((acc, v) => acc + v, 0) / deltas.length;
+    const variance = deltas.reduce((acc, v) => {
+      const diff = v - mean;
+      return acc + diff * diff;
+    }, 0) / deltas.length;
+    const stddev = Math.sqrt(variance);
+
+    const score = maxAbsDelta === 0
+      ? 0
+      : Math.max(0, Math.min(100, (stddev / maxAbsDelta) * 100));
+
+    return { score, stddev, samples: deltas.length };
   }
 
   /**
